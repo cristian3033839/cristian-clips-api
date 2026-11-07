@@ -12,6 +12,7 @@ Reuses the proven logic from ~/workspace/araya-india/hacer_cortes.py
 import json
 import os
 import re
+import shutil
 import subprocess
 
 AVATAR = os.environ.get(
@@ -28,11 +29,17 @@ COOKIES_PATH = os.environ.get("COOKIES_PATH", "/etc/secrets/youtube-cookies.txt"
 
 
 def _yt_dlp_args():
-    """Base yt-dlp args: multi-client fallback + cookies when present."""
+    """Base yt-dlp args: multi-client fallback + cookies when present.
+
+    Render mounts secret files read-only, but yt-dlp saves the cookie
+    jar back to the file at the end of a run (OSError 30 otherwise),
+    so the cookies are copied to a writable temp path first."""
     args = ["python3", "-m", "yt_dlp",
             "--extractor-args", "youtube:player_client=android,ios,tv,web"]
     if os.path.exists(COOKIES_PATH):
-        args += ["--cookies", COOKIES_PATH]
+        tmp_cookies = "/tmp/youtube-cookies.txt"
+        shutil.copyfile(COOKIES_PATH, tmp_cookies)
+        args += ["--cookies", tmp_cookies]
     return args
 
 # Subtitle styles offered by the public page (6 designs).
