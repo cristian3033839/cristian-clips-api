@@ -70,8 +70,21 @@ def _update(job_id, **fields):
         _save_jobs()
 
 
+# One job at a time: two jobs running in parallel (e.g. a retry while
+# the first is still working) double the memory and OOM-kill the
+# instance on Render Free's 512 MB (2026-11-07 11:58 and 12:03).
+# The lock serialises jobs: a second job waits instead of running
+# alongside the first.
+_job_lock = threading.Lock()
+
+
 def run_job(job_id):
     """Background worker: download -> transcribe -> pick moments -> render."""
+    with _job_lock:
+        _run_job_inner(job_id)
+
+
+def _run_job_inner(job_id):
     job = _jobs[job_id]
     jdir = os.path.join(JOBS_DIR, job_id)
     cdir = os.path.join(jdir, "cortes")
