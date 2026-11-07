@@ -33,9 +33,15 @@ def _yt_dlp_args():
 
     Render mounts secret files read-only, but yt-dlp saves the cookie
     jar back to the file at the end of a run (OSError 30 otherwise),
-    so the cookies are copied to a writable temp path first."""
+    so the cookies are copied to a writable temp path first.
+    The web client needs a JS runtime to solve YouTube's "n" challenge
+    (yt-dlp only enables deno by default) and the challenge solver
+    script from GitHub, hence --js-runtimes node and
+    --remote-components ejs:github."""
     args = ["python3", "-m", "yt_dlp",
-            "--extractor-args", "youtube:player_client=android,ios,tv,web"]
+            "--extractor-args", "youtube:player_client=android,ios,tv,web",
+            "--js-runtimes", "node",
+            "--remote-components", "ejs:github"]
     if os.path.exists(COOKIES_PATH):
         tmp_cookies = "/tmp/youtube-cookies.txt"
         shutil.copyfile(COOKIES_PATH, tmp_cookies)
