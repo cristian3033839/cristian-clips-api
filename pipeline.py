@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 AVATAR = os.environ.get(
     "AVATAR_PATH",
@@ -216,31 +217,53 @@ def extract_wav(src, wav_path, start=None, dur=None):
     run(cmd, timeout=600)
 
 
-def _segments_from_model(model, wav, offset=0.0):
-    segs, _ = model.transcribe(wav, language="es", word_timestamps=False)
+def _transcribe_subprocess(wav, word_timestamps=False):
+    """Run faster-whisper in a SHORT-LIVED subprocess and return its
+    JSON: {"segments": [{"start","end","text","words": [[s,e,t],...]}]}.
+    The model (~250 MB) never loads into the API server process, so the
+    server + model + ffmpeg cannot together exceed Render Free's 512 MB
+    (OOM 2026-11-07 02:34). The subprocess exits and frees the memory
+    before ffmpeg runs. Thread limits are set in transcribe.py."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "transcribe.py")
+    cmd = [sys.executable, script, wav]
+    if word_timestamps:
+        cmd.append("--words")
+    env = dict(os.environ)
+    env.setdefault("OMP_NUM_THREADS", "1")
+    env.setdefault("MKL_NUM_THREADS", "1")
+    env.setdefault("TOKENIZERS_PARALLELISM", "false")
+    out = subprocess.run(cmd, capture_output=True, text=True,
+                         timeout=900, env=env)
+    if out.returncode != 0:
+        raise RuntimeError(
+            "transcribe.py failed: " + (out.stderr or "")[-400:])
+    return json.loads(out.stdout)
+
+
+def _segments_from_wav(wav, offset=0.0):
+    data = _transcribe_subprocess(wav, word_timestamps=False)
     out = []
-    for s in segs:
-        text = s.text.strip()
-        if text:
-            out.append({"start": s.start + offset, "end": s.end + offset,
-                        "text": text})
+    for s in data["segments"]:
+        out.append({"start": s["start"] + offset, "end": s["end"] + offset,
+                    "text": s["text"]})
     return out
 
 
-def transcribe_full(model, wav_path, duration):
+def transcribe_full(wav_path, duration):
     """Transcribe the whole audio. Long audio is split into 20-minute
     chunks and transcribed piece by piece: a single faster-whisper run
     over a ~3h wav was once killed by memory (OOM) on this VM."""
     chunk = 1200  # 20 min
     if duration <= 2400:
-        return _segments_from_model(model, wav_path)
+        return _segments_from_wav(wav_path)
     segments = []
     start = 0.0
     idx = 0
     while start < duration:
         part = wav_path + f".part{idx}.wav"
         extract_wav(wav_path, part, start=start, dur=min(chunk, duration - start))
-        segments += _segments_from_model(model, part, offset=start)
+        segments += _segments_from_wav(part, offset=start)
         os.remove(part)
         start += chunk
         idx += 1
@@ -437,14 +460,11 @@ def render_clip(src, start, dur, out_path, ass_path=None,
     run(cmd, timeout=1800)
 
 
-def transcribe_segment(model, wav_path):
+def transcribe_segment(wav_path):
     """Word timestamps for one clip segment (for the karaoke subtitles)."""
-    segs, _ = model.transcribe(wav_path, language="es",
-                               word_timestamps=True)
+    data = _transcribe_subprocess(wav_path, word_timestamps=True)
     words = []
-    for s in segs:
-        for w in (s.words or []):
-            txt = w.word.strip()
-            if txt:
-                words.append((w.start, w.end, txt))
+    for s in data["segments"]:
+        for (st, en, txt) in s["words"]:
+            words.append((st, en, txt))
     return words
