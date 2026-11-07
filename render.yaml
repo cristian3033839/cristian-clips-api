@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: cristian-clips-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
