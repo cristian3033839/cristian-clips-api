@@ -18,6 +18,23 @@ AVATAR = os.environ.get(
     "AVATAR_PATH",
     "/home/hatch/workspace/araya-serpientes/avatar-foto-sin-fondo.png")
 
+# YouTube cookies (Netscape cookies.txt from a logged-in session).
+# Render secret files land in /etc/secrets/; the path is overridable.
+# Only used when the file actually exists, so the service also runs
+# without cookies. Added 2026-11-07: the android/ios/tv/web client
+# fallback was tried and ALL FOUR are blocked by YouTube on Render's
+# IPs (job ff3e7e52b27a) — cookies are the reliable fix.
+COOKIES_PATH = os.environ.get("COOKIES_PATH", "/etc/secrets/youtube-cookies.txt")
+
+
+def _yt_dlp_args():
+    """Base yt-dlp args: multi-client fallback + cookies when present."""
+    args = ["python3", "-m", "yt_dlp",
+            "--extractor-args", "youtube:player_client=android,ios,tv,web"]
+    if os.path.exists(COOKIES_PATH):
+        args += ["--cookies", COOKIES_PATH]
+    return args
+
 # Subtitle styles offered by the public page (6 designs).
 # karaoke: word-by-word \k tags, yellow fill over white.
 # The rest render whole-line events (no \k) with their own look.
@@ -150,20 +167,20 @@ def download_info(url):
 
     Render's IPs get YouTube's bot check with the Android client alone,
     so several player clients are tried in order (android, iOS, TV, web)
-    until one returns the player response."""
-    p = _run_with_retries(["python3", "-m", "yt_dlp",
-                           "--extractor-args", "youtube:player_client=android,ios,tv,web",
-                           "--no-download", "--dump-json", url], timeout=300)
+    until one returns the player response. When a cookies file is
+    present it is passed too (the reliable fix for the bot check)."""
+    p = _run_with_retries(_yt_dlp_args() +
+                          ["--no-download", "--dump-json", url], timeout=300)
     return json.loads(p.stdout)
 
 
 def download_video(url, out_path):
     """Download best <=720p (these videos usually only offer 360p).
     yt-dlp resumes from the .part file, so a retry after a 403 continues.
-    Several player clients are tried in order against YouTube's bot check."""
-    _run_with_retries(["python3", "-m", "yt_dlp",
-                       "--extractor-args", "youtube:player_client=android,ios,tv,web",
-                       "-f", "best[height<=720]",
+    Several player clients are tried in order against YouTube's bot check,
+    plus the cookies file when present."""
+    _run_with_retries(_yt_dlp_args() +
+                      ["-f", "best[height<=720]",
                        "-o", out_path, url], timeout=1800)
 
 
