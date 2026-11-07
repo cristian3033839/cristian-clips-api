@@ -34,6 +34,14 @@ def _yt_dlp_args():
     Render mounts secret files read-only, but yt-dlp saves the cookie
     jar back to the file at the end of a run (OSError 30 otherwise),
     so the cookies are copied to a writable temp path first.
+    IMPORTANT: the copy happens ONLY when /tmp has no jar yet.
+    YouTube rotates session cookies in its responses and yt-dlp saves
+    the new values back to the jar; re-copying the (now stale) secret
+    file on every run discards those updates and the next run fails
+    with a bot check (seen 2026-11-07: job 90645f983942 worked, job
+    25722af80871 failed 6 minutes later on the same cookies).
+    A secret-file update redeploys the service, which wipes /tmp, so
+    a fresh export is picked up naturally on the next deploy.
     The web client needs a JS runtime to solve YouTube's "n" challenge
     (yt-dlp only enables deno by default) and the challenge solver
     script from GitHub, hence --js-runtimes node and
@@ -44,7 +52,8 @@ def _yt_dlp_args():
             "--remote-components", "ejs:github"]
     if os.path.exists(COOKIES_PATH):
         tmp_cookies = "/tmp/youtube-cookies.txt"
-        shutil.copyfile(COOKIES_PATH, tmp_cookies)
+        if not os.path.exists(tmp_cookies):
+            shutil.copyfile(COOKIES_PATH, tmp_cookies)
         args += ["--cookies", tmp_cookies]
     return args
 
