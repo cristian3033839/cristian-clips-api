@@ -33,6 +33,23 @@ AVATAR = os.environ.get(
 COOKIES_PATH = os.environ.get("COOKIES_PATH", "/etc/secrets/youtube-cookies.txt")
 SKIP_COOKIES = os.environ.get("SKIP_COOKIES", "0") == "1"
 
+# Cloudflare WARP (free) SOCKS5 proxy, started by start.sh when the
+# WARP device registers successfully. When it is up, yt-dlp exits
+# through a Cloudflare IP (which YouTube does not block) and no cookies
+# are needed. When it is down, the pipeline falls back to cookies.
+WARP_PROXY = os.environ.get("WARP_PROXY", "socks5h://127.0.0.1:1080")
+
+
+def _warp_proxy_up():
+    """True when the WARP SOCKS5 proxy is listening on 127.0.0.1:1080."""
+    import socket
+    try:
+        s = socket.create_connection(("127.0.0.1", 1080), timeout=2)
+        s.close()
+        return True
+    except OSError:
+        return False
+
 
 def _yt_dlp_args():
     """Base yt-dlp args: multi-client fallback + cookies when present.
@@ -56,6 +73,12 @@ def _yt_dlp_args():
             "--extractor-args", "youtube:player_client=android,ios,tv,web",
             "--js-runtimes", "node",
             "--remote-components", "ejs:github"]
+    # WARP up: exit through Cloudflare (YouTube does not block it) and
+    # skip cookies entirely — this is the cookie-free path. WARP down:
+    # fall back to cookies (or SKIP_COOKIES for the PO-token test).
+    if _warp_proxy_up():
+        args += ["--proxy", WARP_PROXY]
+        return args
     if not SKIP_COOKIES and os.path.exists(COOKIES_PATH):
         tmp_cookies = "/tmp/youtube-cookies.txt"
         if not os.path.exists(tmp_cookies):
