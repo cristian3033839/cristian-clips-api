@@ -251,11 +251,15 @@ def _segments_from_wav(wav, offset=0.0):
 
 
 def transcribe_full(wav_path, duration):
-    """Transcribe the whole audio. Long audio is split into 20-minute
-    chunks and transcribed piece by piece: a single faster-whisper run
-    over a ~3h wav was once killed by memory (OOM) on this VM."""
-    chunk = 1200  # 20 min
-    if duration <= 2400:
+    """Transcribe the whole audio in 10-minute chunks, piece by piece.
+
+    A single faster-whisper run loads the whole wav into memory, so a
+    36-minute video (2,160 s) used to run as ONE transcription and
+    peaked near Render Free's 512 MB limit (OOM restarts 2026-11-07
+    11:58 and 12:03). 10-minute chunks keep the audio array small;
+    the model (~250 MB) is the same either way."""
+    chunk = 600  # 10 min
+    if duration <= 600:
         return _segments_from_wav(wav_path)
     segments = []
     start = 0.0
@@ -451,11 +455,17 @@ def render_clip(src, start, dur, out_path, ass_path=None,
         fc_parts.append(base + "[v]")
         vmap = "[v]"
     fc = ";".join(fc_parts)
+    # -threads 1 + preset veryfast: ffmpeg otherwise spawns a thread
+    # pool per core (the container sees the host's many cores) and the
+    # x264 lookahead buffers push the 512 MB Render Free instance over
+    # the edge while rendering 720x1280. One thread is slower per
+    # clip but keeps the peak low; quality at crf 22 is unchanged.
     cmd = ["ffmpeg", "-y", "-i", src]
     if avatar:
         cmd += ["-loop", "1", "-i", AVATAR]
-    cmd += ["-filter_complex", fc, "-map", vmap, "-map", "0:a",
-            "-c:v", "libx264", "-crf", "22", "-preset", "medium",
+    cmd += ["-threads", "1", "-filter_complex", fc, "-map", vmap,
+            "-map", "0:a",
+            "-c:v", "libx264", "-crf", "22", "-preset", "veryfast",
             "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", out_path]
     run(cmd, timeout=1800)
 
