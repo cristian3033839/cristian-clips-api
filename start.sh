@@ -17,16 +17,20 @@ setup_warp() {
         echo "[warp] reusing existing WARP config"
     else
         echo "[warp] registering a new WARP device..."
+        # NOTE: wgcf writes wgcf-profile.conf to the CURRENT directory,
+        # not next to --config, so run it from $WARP_DIR.
+        cd "$WARP_DIR" || { echo "[warp] cannot cd to $WARP_DIR"; return 1; }
         # --accept-tos: non-interactive (no prompt). Timeout so a hung
         # registration cannot block the server from starting.
         timeout 60 /usr/local/bin/wgcf register --accept-tos \
             --config "$WARP_DIR/wgcf-account.toml" >/tmp/warp-register.log 2>&1 \
-            || { echo "[warp] register failed, continuing without WARP"; return 1; }
+            || { echo "[warp] register failed, continuing without WARP"; cd /app; return 1; }
         echo "[warp] generating WireGuard profile..."
         timeout 30 /usr/local/bin/wgcf generate \
             --config "$WARP_DIR/wgcf-account.toml" >/tmp/warp-generate.log 2>&1 \
-            || { echo "[warp] generate failed, continuing without WARP"; return 1; }
-        # wgcf writes wgcf-profile.conf next to the account file.
+            || { echo "[warp] generate failed, continuing without WARP"; cd /app; return 1; }
+        cd /app || return 1
+        # wgcf writes wgcf-profile.conf in the directory it ran from.
         if [ ! -f "$WARP_DIR/wgcf-profile.conf" ]; then
             echo "[warp] profile missing, continuing without WARP"; return 1
         fi
