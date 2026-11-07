@@ -38,7 +38,6 @@ HOST, PORT = os.environ.get("HOST", "0.0.0.0"), int(os.environ.get("PORT", "8765
 
 _lock = threading.Lock()
 _jobs = {}
-_model = None  # faster-whisper model, loaded lazily once
 
 
 def _load_jobs():
@@ -69,14 +68,6 @@ def _update(job_id, **fields):
         job.update(fields)
         job["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         _save_jobs()
-
-
-def _get_model():
-    global _model
-    if _model is None:
-        from faster_whisper import WhisperModel
-        _model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    return _model
 
 
 def run_job(job_id):
@@ -115,14 +106,13 @@ def run_job(job_id):
                     progress="Transcribiendo el audio...")
             wav = os.path.join(jdir, "audio-full.wav")
             pipeline.extract_wav(orig, wav)
-            segments = pipeline.transcribe_full(_get_model(), wav, duration)
+            segments = pipeline.transcribe_full(wav, duration)
             pipeline.save_transcript(
                 segments, os.path.join(jdir, "transcripcion.txt"))
             _update(job_id, status="rendering",
                     progress="Buscando los mejores momentos...")
             picks = pipeline.pick_moments(
                 info, segments, duration, num, clip_dur)
-        model = _get_model()
         clips = []
         for i, pick in enumerate(picks, 1):
             # Cut and transcribe with temporary names first: in
@@ -141,7 +131,7 @@ def run_job(job_id):
             # subtitles off.
             words = []
             if opts["subtitles"] or pick.get("title") is None:
-                words = pipeline.transcribe_segment(model, wav_tmp)
+                words = pipeline.transcribe_segment(wav_tmp)
             if pick.get("title") is None:
                 text = " ".join(w for (_, _, w) in words)
                 pick["title"] = pipeline._title_from_text(text)
