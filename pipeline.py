@@ -146,18 +146,23 @@ def _run_with_retries(cmd, timeout=900, attempts=3):
 
 
 def download_info(url):
-    """Fetch the video metadata (title, duration, heatmap) via yt-dlp."""
+    """Fetch the video metadata (title, duration, heatmap) via yt-dlp.
+
+    Render's IPs get YouTube's bot check with the Android client alone,
+    so several player clients are tried in order (android, iOS, TV, web)
+    until one returns the player response."""
     p = _run_with_retries(["python3", "-m", "yt_dlp",
-                           "--extractor-args", "youtube:player_client=android",
+                           "--extractor-args", "youtube:player_client=android,ios,tv,web",
                            "--no-download", "--dump-json", url], timeout=300)
     return json.loads(p.stdout)
 
 
 def download_video(url, out_path):
     """Download best <=720p (these videos usually only offer 360p).
-    yt-dlp resumes from the .part file, so a retry after a 403 continues."""
+    yt-dlp resumes from the .part file, so a retry after a 403 continues.
+    Several player clients are tried in order against YouTube's bot check."""
     _run_with_retries(["python3", "-m", "yt_dlp",
-                       "--extractor-args", "youtube:player_client=android",
+                       "--extractor-args", "youtube:player_client=android,ios,tv,web",
                        "-f", "best[height<=720]",
                        "-o", out_path, url], timeout=1800)
 
