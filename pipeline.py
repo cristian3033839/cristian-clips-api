@@ -26,7 +26,12 @@ AVATAR = os.environ.get(
 # without cookies. Added 2026-11-07: the android/ios/tv/web client
 # fallback was tried and ALL FOUR are blocked by YouTube on Render's
 # IPs (job ff3e7e52b27a) — cookies are the reliable fix.
+# SKIP_COOKIES=1 (2026-11-07): skip the cookie jar even if present,
+# to test the bgutil PO-token provider as a cookie-free alternative.
+# When set, yt-dlp relies on PO tokens (web client) + the other
+# clients instead of a logged-in session.
 COOKIES_PATH = os.environ.get("COOKIES_PATH", "/etc/secrets/youtube-cookies.txt")
+SKIP_COOKIES = os.environ.get("SKIP_COOKIES", "0") == "1"
 
 
 def _yt_dlp_args():
@@ -51,7 +56,7 @@ def _yt_dlp_args():
             "--extractor-args", "youtube:player_client=android,ios,tv,web",
             "--js-runtimes", "node",
             "--remote-components", "ejs:github"]
-    if os.path.exists(COOKIES_PATH):
+    if not SKIP_COOKIES and os.path.exists(COOKIES_PATH):
         tmp_cookies = "/tmp/youtube-cookies.txt"
         if not os.path.exists(tmp_cookies):
             shutil.copyfile(COOKIES_PATH, tmp_cookies)
